@@ -1,0 +1,54 @@
+name: Build bootc image with GHA
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  subs:
+    name: Build bootc image
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_NAME: fedora-workstation-bootc
+      REGISTRY: quay.io/mrguitar
+
+    steps:
+      - name: Clone the repository
+        uses: actions/checkout@v4
+
+      # workaround for https://github.com/redhat-actions/podman-login/issues/42 since the docker config from the host doesn't come up to the container
+      - name: Fix auth file
+        env:
+          auth: "{ \"auths\": {} }"
+        run: |
+          mkdir -p $HOME/.docker
+          echo $auth > $HOME/.docker/config.json
+      
+      - name: Log in to registry
+        uses: redhat-actions/podman-login@v1
+        with:
+          registry: quay.io
+          username: ${{ secrets.REGISTRY_USER }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+          auth_file_path: /run/containers/0/auth.json
+      
+      - name: Use buildah bud to create the image
+        id: build-image
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: ${{ env.IMAGE_NAME }}
+          tags: latest ${{ github.sha }}
+          build-args: sshpubkey=${{ secrets.SSHPUBKEY }}
+          containerfiles: |
+            ./Containerfile
+
+      - name: Push to Repository
+        id: push-to-registry
+        uses: redhat-actions/push-to-registry@v2
+        with:
+          image: ${{ steps.build-image.outputs.image }}
+          tags: ${{ steps.build-image.outputs.tags }}
+          registry: ${{ env.REGISTRY }}
+
+      - name: Print image url
+        run: echo "Image pushed to ${{ steps.push-to-quay.outputs.registry-paths }}"
