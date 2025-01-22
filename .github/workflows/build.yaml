@@ -5,15 +5,6 @@ on:
       - main
 
 jobs:
-  subs:
-    name: Build bootc image
-    runs-on: ubuntu-latest
-    env:
-      IMAGE_NAME: fedora-workstation-bootc
-      REGISTRY: quay.io/mrguitar
-
-
-jobs:
   rhel-bootc-image-build:
     name: Build RHEL bootc image with repo access
     runs-on: ubuntu-latest
