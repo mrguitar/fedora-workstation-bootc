@@ -12,43 +12,61 @@ jobs:
       IMAGE_NAME: fedora-workstation-bootc
       REGISTRY: quay.io/mrguitar
 
+
+jobs:
+  rhel-bootc-image-build:
+    name: Build RHEL bootc image with repo access
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_NAME: ${{github.event.repository.name}}
+      PUSHREGISTRY: ghcr.io/${{ github.actor }}
+      TAGLIST: latest ${{ github.sha }} ${{ github.ref_name }}
+      CONTAINERFILE: Containerfile
+    container:
+      image: registry.access.redhat.com/ubi9/ubi
+      options: --privileged
+    permissions:
+      contents: write
+      packages: write
+
     steps:
       - name: Clone the repository
         uses: actions/checkout@v4
 
-      # workaround for https://github.com/redhat-actions/podman-login/issues/42 since the docker config from the host doesn't come up to the container
+      - name: Get container tools in UBI builder
+        run: dnf -y install podman buildah skopeo
+
+     # workaround for https://github.com/redhat-actions/podman-login/issues/42 since the docker config from the host doesn't come up to the container
       - name: Fix auth file
         env:
           auth: "{ \"auths\": {} }"
         run: |
           mkdir -p $HOME/.docker
           echo $auth > $HOME/.docker/config.json
-      
-      - name: Log in to registry
-        uses: redhat-actions/podman-login@v1
-        with:
-          registry: quay.io
-          username: ${{ secrets.REGISTRY_USER }}
-          password: ${{ secrets.REGISTRY_PASSWORD }}
-          auth_file_path: /run/containers/0/auth.json
-      
+
       - name: Use buildah bud to create the image
         id: build-image
         uses: redhat-actions/buildah-build@v2
         with:
           image: ${{ env.IMAGE_NAME }}
-          tags: latest ${{ github.sha }}
-          build-args: sshpubkey=${{ secrets.SSHPUBKEY }}
-          containerfiles: |
-            ./Containerfile
+          tags: ${{ env.TAGLIST }}
+          containerfiles: ${{ env.CONTAINERFILE }}
 
-      - name: Push to Repository
-        id: push-to-registry
+      - name: Log in to the GitHub Container registry
+        uses: redhat-actions/podman-login@v1
+        with:
+          registry: ${{ env.PUSHREGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+          auth_file_path: /run/containers/0/auth.json
+
+      - name: Push to GitHub Container Repository
+        id: push-to-ghcr
         uses: redhat-actions/push-to-registry@v2
         with:
           image: ${{ steps.build-image.outputs.image }}
           tags: ${{ steps.build-image.outputs.tags }}
-          registry: ${{ env.REGISTRY }}
+          registry: ${{ env.PUSHREGISTRY }}
 
       - name: Print image url
         run: echo "Image pushed to ${{ steps.push-to-quay.outputs.registry-paths }}"
